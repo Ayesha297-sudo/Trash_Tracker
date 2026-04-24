@@ -1,30 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet';
 import axios from 'axios';
-import 'leaflet/dist/leaflet.css';
-import L from 'leaflet';
 import { LayoutDashboard, Menu, Users, Settings, LogOut, Search, Bell, X, MapPin, Trash2, Calendar, Camera } from 'lucide-react';
+import MapWrapper from './components/maps/MapWrapper';
 
 // =====================================================================
-// 1. LEAFLET MAP CONFIGURATION & ICONS
-// =====================================================================
-// Custom function to generate colored map pins based on task status
-const createIcon = (colorUrl) => new L.Icon({
-  iconUrl: colorUrl,
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41]
-});
-
-// Pre-defined colored markers for different detection statuses
-const redIcon = createIcon('https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png');
-const yellowIcon = createIcon('https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-gold.png');
-const greenIcon = createIcon('https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png');
-
-// =====================================================================
-// 2. HELPER UTILITIES
+// 1. HELPER UTILITIES
 // =====================================================================
 const months = [
   "January", "February", "March", "April", "May", "June",
@@ -43,71 +23,7 @@ const getFirstDayOfMonth = (month, year) => {
 const getTodayStr = () => new Date().toISOString().split('T')[0];
 
 // =====================================================================
-// 3. MAP BEHAVIOR COMPONENTS
-// =====================================================================
-// Smoothly pans and zooms the map to a specific selected location
-function FlyToLocation({ target }) {
-  const map = useMap();
-  useEffect(() => {
-    if (target) {
-      // Zooms into level 18 smoothly over 1.5 seconds
-      map.flyTo(target, 18, { duration: 1.5 });
-    }
-  }, [target, map]);
-  return null;
-}
-
-// 🌟 AUTO-ZOOM TO FIT ALL MARKERS
-// Dynamically calculates the boundaries of all current pins and adjusts the map view
-function FitBoundsToData({ data }) {
-  const map = useMap();
-
-  // Stringifying the data ensures the effect only triggers when the actual dataset changes.
-  // This prevents the map from forcefully zooming out when a user simply clicks a pin.
-  const dataString = JSON.stringify(data);
-
-  useEffect(() => {
-    // If valid data exists, calculate the boundaries and adjust the map view
-    if (data && data.length > 0) {
-      const bounds = L.latLngBounds(data.map(item => [item.latitude, item.longitude]));
-      
-      // Smoothly fly to the calculated bounds with padding so pins aren't cut off at the edges
-      map.flyToBounds(bounds, { padding: [50, 50], maxZoom: 15, duration: 1.5 });
-    }
-  }, [dataString, map]); // <-- Crucial: Depend on the stringified data to avoid infinite loops
-
-  return null;
-}
-
-// BULLETPROOF FIX FOR GREY MAP SPACE
-// Prevents Leaflet rendering glitches when the sidebar is toggled
-function MapResizer({ isCollapsed }) {
-  const map = useMap();
-
-  useEffect(() => {
-    // Tells Leaflet to recalculate its size continuously EVERY 50ms 
-    // while the sidebar is sliding, ensuring no grey space is left behind.
-    const interval = setInterval(() => {
-      map.invalidateSize();
-    }, 50);
-
-    // Stop checking after 400ms (giving the 300ms CSS animation plenty of time to finish)
-    const timeout = setTimeout(() => {
-      clearInterval(interval);
-      map.invalidateSize(); // One final safety check
-    }, 400);
-
-    return () => {
-      clearInterval(interval);
-      clearTimeout(timeout);
-    };
-  }, [isCollapsed, map]);
-
-  return null;
-}
-
-// =====================================================================
-// 4. MAIN APPLICATION COMPONENT
+// 2. MAIN APPLICATION COMPONENT
 // =====================================================================
 function App() {
   const loggedInAdminId = localStorage.getItem("admin_id");
@@ -229,7 +145,7 @@ function App() {
       
       if (response.data && response.data.length > 0) {
         const { lat, lon } = response.data[0];
-        setSelectedLocation([parseFloat(lat), parseFloat(lon)]);
+        setSelectedLocation({ lat: parseFloat(lat), lng: parseFloat(lon) });
         setShowSuggestions(false);
       } else {
         alert("Location not found! Try searching with 'Muzaffarabad' at the end (e.g. 'Chehla Campus Muzaffarabad').");
@@ -240,7 +156,7 @@ function App() {
   };
 
   const handleSelectLocation = (loc) => {
-    const coords = [parseFloat(loc.lat), parseFloat(loc.lon)];
+    const coords = { lat: parseFloat(loc.lat), lng: parseFloat(loc.lon) };
     setSearchQuery(loc.display_name); // Put full name in search bar
     setSelectedLocation(coords);      // Triggers map "Fly" logic
     setShowSuggestions(false);        // Hide the dropdown
@@ -901,40 +817,14 @@ function App() {
         {/* ===== MAP CONTAINER (The "Google Earth" View) ===== */}
         <div style={{ flex: 1, background: 'white', borderRadius: '20px', padding: '0px', boxShadow: '0 4px 20px rgba(0,0,0,0.05)', position: 'relative', overflow: 'hidden' }}>
           
-          <MapContainer center={[34.37, 73.47]} zoom={12} zoomControl={false} style={{ height: "100%", width: "100%", borderRadius: '15px' }}>
+          <MapWrapper
+            filteredData={filteredData}
+            selectedLocation={selectedLocation}
+            setSelectedLocation={setSelectedLocation}
+            setSelectedTask={setSelectedTask}
+            isCollapsed={isCollapsed}
+          />
             
-            {/* 🌍 GOOGLE HYBRID TILE LAYER (Satellite imagery + Roads + Labels) 🌍 */}
-            <TileLayer
-              url="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
-              attribution="&copy; Google Maps"
-            />
-
-            {/* Custom Hook: Resizes the map correctly when the sidebar is collapsed/expanded */}
-            <MapResizer isCollapsed={isCollapsed} />
-
-            {/* Custom Hook: Smoothly animates the map camera to the selected location */}
-            <FlyToLocation target={selectedLocation} />
-            
-            {/* Custom Hook: Adjusts map bounds to perfectly fit all filtered pins on screen */}
-            <FitBoundsToData data={filteredData} />
-
-            {/* MAPPING LOGIC: Loop through filtered data and render dynamic pins */}
-            {filteredData.map((trash) => (
-              <Marker 
-                key={trash.id} 
-                position={[trash.latitude, trash.longitude]} 
-                icon={trash.status === "Pending" ? redIcon : trash.status === "Assigned" ? yellowIcon : greenIcon}
-                eventHandlers={{
-                  // LOGIC: When a pin is clicked, set it as the active task and pan the camera to it
-                  click: () => {
-                    setSelectedTask(trash);
-                    setSelectedLocation([trash.latitude, trash.longitude]); // For zooming in
-                  }
-                }}
-              />
-            ))}
-          </MapContainer>
-
          {/* ===== FLOATING DETAILS CARD ===== */}
          {/* Renders conditionally when a specific task/pin is selected by the user */}
           {selectedTask && (
