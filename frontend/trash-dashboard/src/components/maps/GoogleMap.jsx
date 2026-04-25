@@ -2,9 +2,27 @@ import React, { useEffect, useRef } from 'react';
 import { GoogleMap, Marker, useJsApiLoader } from '@react-google-maps/api';
 
 const defaultCenter = { lat: 34.37, lng: 73.47 };
+const icons = {
+  Pending: 'http://maps.google.com/mapfiles/ms/icons/red-dot.png',
+  Assigned: 'http://maps.google.com/mapfiles/ms/icons/yellow-dot.png',
+  Done: 'http://maps.google.com/mapfiles/ms/icons/green-dot.png'
+};
+const getMarkerIcon = (status) => icons[status] || icons.Pending;
 
 function GoogleMapView({ filteredData, selectedLocation, setSelectedLocation, setSelectedTask }) {
   const mapRef = useRef(null);
+  const dataString = JSON.stringify(filteredData || []);
+
+  useEffect(() => {
+    const markerData = JSON.parse(dataString);
+    if (!mapRef.current || markerData.length === 0) return;
+
+    const bounds = new window.google.maps.LatLngBounds();
+    markerData.forEach((trash) => {
+      bounds.extend({ lat: trash.latitude, lng: trash.longitude });
+    });
+    mapRef.current.fitBounds(bounds);
+  }, [dataString]);
 
   useEffect(() => {
     if (mapRef.current && selectedLocation) {
@@ -26,10 +44,14 @@ function GoogleMapView({ filteredData, selectedLocation, setSelectedLocation, se
         mapRef.current = null;
       }}
     >
-      {filteredData.map((trash) => (
+      {(filteredData || []).map((trash) => (
         <Marker
           key={trash.id}
           position={{ lat: trash.latitude, lng: trash.longitude }}
+          icon={{
+            url: getMarkerIcon(trash.status),
+            scaledSize: new window.google.maps.Size(32, 32)
+          }}
           onClick={() => {
             setSelectedTask(trash);
             setSelectedLocation({ lat: trash.latitude, lng: trash.longitude });
