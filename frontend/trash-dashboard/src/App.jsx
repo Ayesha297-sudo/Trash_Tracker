@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { LayoutDashboard, Menu, Users, Settings, LogOut, Search, Bell, X, MapPin, Trash2, Calendar, Camera } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { LayoutDashboard, Menu, Users, Settings, LogOut, Search, Bell, X, MapPin, Trash2, Calendar, Camera, History as HistoryIcon } from 'lucide-react';
 import MapWrapper from './components/maps/MapWrapper';
 
 // =====================================================================
@@ -443,6 +444,9 @@ function App() {
           </div>
           <SidebarItem icon={<LayoutDashboard size={20} />} text={!isCollapsed && "Dashboard"} fullText="Dashboard"/>
           <SidebarItem icon={<MapPin size={22} />} text={!isCollapsed && "Trash Map"} fullText="Trash Map" active />
+          <Link to="/history" style={{ textDecoration: 'none' }}>
+            <SidebarItem icon={<HistoryIcon size={20} />} text={!isCollapsed && "History"} fullText="History"/>
+          </Link>
           <SidebarItem icon={<Users size={20} />} text={!isCollapsed && "Workers"} fullText="Workers"/>
           <SidebarItem icon={<Settings size={20} />} text={!isCollapsed && "Settings"} fullText="Settings"/>
         </nav>
