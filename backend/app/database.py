@@ -10,7 +10,7 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 # - "root:@": The default XAMPP credentials (username 'root', empty password).
 # - "localhost": Indicates the database server is hosted locally.
 # - "trash_tracker_db": The target database name.
-SQLALCHEMY_DATABASE_URL = "mysql+pymysql://root:@localhost/trash_tracker_db"
+SQLALCHEMY_DATABASE_URL = "mysql+pymysql://root:@localhost/trash_tracker_db2"
 
 # =====================================================================
 # 2. SQLALCHEMY ENGINE INITIALIZATION

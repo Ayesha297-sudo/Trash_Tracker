@@ -6,6 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from ultralytics import YOLO
 from sqlalchemy.orm import Session
+from sqlalchemy import inspect, text
 from . import models, database
 from datetime import datetime
 from pydantic import BaseModel
@@ -16,6 +17,32 @@ from pydantic import BaseModel
 # Automatically generates all database tables based on defined ORM models
 # if they do not already exist in the MySQL database.
 models.Base.metadata.create_all(bind=database.engine)
+
+
+def ensure_trash_detection_columns():
+    inspector = inspect(database.engine)
+    if "trash_detections" not in inspector.get_table_names():
+        return
+
+    existing_columns = {column["name"] for column in inspector.get_columns("trash_detections")}
+    alter_clauses = []
+
+    if "assigned_at" not in existing_columns:
+        alter_clauses.append("ADD COLUMN assigned_at DATETIME NULL")
+    if "completed_at" not in existing_columns:
+        alter_clauses.append("ADD COLUMN completed_at DATETIME NULL")
+    if "zone" not in existing_columns:
+        alter_clauses.append("ADD COLUMN zone VARCHAR(100) NULL")
+
+    if not alter_clauses:
+        return
+
+    with database.engine.begin() as connection:
+        for clause in alter_clauses:
+            connection.execute(text(f"ALTER TABLE trash_detections {clause}"))
+
+
+ensure_trash_detection_columns()
 
 app = FastAPI()
 
@@ -100,12 +127,20 @@ def get_coordinates_from_kml(kml_path):
             if name_tag is not None and point_tag is not None:
                 name = name_tag.text.strip()
                 coords = point_tag.text.strip().split(',')
+                parts = name.split("-")
+                zone = parts[0].strip() if len(parts) > 1 else "Unknown"
                 
                 # Extract coordinates (Longitude, Latitude)
                 lat = float(coords[1])
                 lng = float(coords[0])
                 
-                coords_db[name] = {"lat": lat, "lng": lng}
+                coords_entry = {"lat": lat, "lng": lng, "zone": zone}
+                coords_db[name] = coords_entry
+
+                if len(parts) > 1:
+                    site_key = "-".join(parts[1:]).strip()
+                    if site_key and site_key not in coords_db:
+                        coords_db[site_key] = coords_entry
         
         print(f"🌍 KML Loaded: Found {len(coords_db)} locations.")
         return coords_db
@@ -159,7 +194,7 @@ def scan_folder(date_str: str, db: Session = Depends(get_db)):
                 if os.path.exists(temp_file):
                     shutil.move(temp_file, final_path)
 
-                location = gps_data.get(clean_name, {"lat": 34.37, "lng": 73.47})
+                location = gps_data.get(clean_name, {"lat": 34.37, "lng": 73.47, "zone": "Unknown"})
 
                 new_record = models.TrashDetection(
                     id=unique_id,
@@ -169,6 +204,7 @@ def scan_folder(date_str: str, db: Session = Depends(get_db)):
                     longitude=location["lng"],
                     status="Pending",
                     detection_date=scan_date,
+                    zone=location.get("zone", "Unknown"),
                     image_url=f"http://127.0.0.1:8000/static/detections/{final_filename}" 
                 )
                 db.add(new_record)
@@ -194,6 +230,7 @@ def assign_worker(image_id: str, worker_id: int, db: Session = Depends(get_db)):
     
     record.status = "Assigned"
     record.worker_id = worker.id
+    record.assigned_at = datetime.utcnow()
     worker.status = "Busy" 
     
     db.commit()
@@ -207,6 +244,56 @@ def get_all_workers(db: Session = Depends(get_db)):
     return workers
 
 
+@app.get("/history")
+def get_history(db: Session = Depends(get_db)):
+    records = (
+        db.query(models.TrashDetection)
+        .filter(models.TrashDetection.status == "Done")
+        .order_by(models.TrashDetection.detection_date.desc())
+        .all()
+    )
+
+    result = []
+
+    for record in records:
+        worker_name = record.assigned_worker.name if record.assigned_worker else None
+
+        resolution_time = None
+        resolution_unit = None
+
+        if (
+            record.assigned_at
+            and record.completed_at
+            and record.completed_at > record.assigned_at
+        ):
+            delta = record.completed_at - record.assigned_at
+            minutes = int(delta.total_seconds() / 60)
+            resolution_time = minutes if minutes < 60 else round(minutes / 60, 1)
+            resolution_unit = "min" if minutes < 60 else "hr"
+
+        result.append(
+            {
+                "id": record.id,
+                "site_name": record.site_name,
+                "date": record.detection_date,
+                "detection_date": record.detection_date,
+                "zone": record.zone,
+                "worker": worker_name,
+                "worker_id": record.worker_id,
+                "resolution_time": resolution_time,
+                "resolution_unit": resolution_unit,
+                "status": record.status,
+                "latitude": record.latitude,
+                "longitude": record.longitude,
+                "proof_url": record.proof_url,
+                "assigned_at": record.assigned_at,
+                "completed_at": record.completed_at,
+            }
+        )
+
+    return result
+
+
 @app.put("/complete/{image_id}")
 def complete_task(image_id: str, db: Session = Depends(get_db)):
     # Legacy/Fallback endpoint to mark a task as Done directly
@@ -216,6 +303,7 @@ def complete_task(image_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Not found")
     
     record.status = "Done"
+    record.completed_at = datetime.utcnow()
     db.commit()
     
     return {"message": "Trash Collected! Task Completed."}
@@ -380,6 +468,7 @@ def upload_proof_and_complete(
 
     # Update task lifecycle status and attach evidence URL
     record.status = "Done"
+    record.completed_at = datetime.utcnow()
     record.proof_url = f"http://127.0.0.1:8000/static/proofs/{new_filename}"
     
     db.commit()

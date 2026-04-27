@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Date, Integer, ForeignKey
+from sqlalchemy import Column, String, Date, Integer, ForeignKey, DateTime
 from sqlalchemy.dialects.mysql import DOUBLE
 from sqlalchemy.orm import relationship
 from .database import Base
@@ -50,6 +50,9 @@ class TrashDetection(Base):
     status = Column(String(50), default="Pending")
     image_url = Column(String(500))
     detection_date = Column(Date, default=date.today)
+    assigned_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    zone = Column(String(100), nullable=True)
 
     # -----------------------------------------------------------------
     # TASK ASSIGNMENT & PROOF TRACKING
