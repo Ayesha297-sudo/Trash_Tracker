@@ -24,6 +24,7 @@ dist-ssr
 *.sw?
 
 # Python bytecode
+venv/
 **/__pycache__/
 *.py[cod]
 *$py.class
