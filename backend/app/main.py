@@ -6,7 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from ultralytics import YOLO
 from sqlalchemy.orm import Session
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect, text, func, case
 from . import models, database
 from datetime import datetime
 from pydantic import BaseModel
@@ -239,9 +239,34 @@ def assign_worker(image_id: str, worker_id: int, db: Session = Depends(get_db)):
 
 @app.get("/workers")
 def get_all_workers(db: Session = Depends(get_db)):
-    # Fetches the list of all workers to populate the frontend dropdown
-    workers = db.query(models.Worker).all()
-    return workers
+    # Returns worker roster with live workload-derived status and completion stats.
+    workers = (
+        db.query(
+            models.Worker.id.label("id"),
+            models.Worker.name.label("name"),
+            func.coalesce(
+                func.sum(case((models.TrashDetection.status == "Done", 1), else_=0)),
+                0,
+            ).label("tasks_completed"),
+            func.coalesce(
+                func.sum(case((models.TrashDetection.status != "Done", 1), else_=0)),
+                0,
+            ).label("active_tasks"),
+        )
+        .outerjoin(models.TrashDetection, models.TrashDetection.worker_id == models.Worker.id)
+        .group_by(models.Worker.id, models.Worker.name)
+        .all()
+    )
+
+    return [
+        {
+            "id": worker.id,
+            "name": worker.name,
+            "status": "busy" if int(worker.active_tasks or 0) > 0 else "available",
+            "tasks_completed": int(worker.tasks_completed or 0),
+        }
+        for worker in workers
+    ]
 
 
 @app.get("/history")

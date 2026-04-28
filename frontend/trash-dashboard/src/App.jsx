@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Link } from 'react-router-dom';
-import { LayoutDashboard, Menu, Users, Settings, LogOut, Search, Bell, X, MapPin, Trash2, Calendar, Camera, History as HistoryIcon } from 'lucide-react';
+import { LayoutDashboard, Menu, Users, Settings as SettingsIcon, LogOut, Search, Bell, X, MapPin, Trash2, Calendar, Camera, History as HistoryIcon } from 'lucide-react';
 import MapWrapper from './components/maps/MapWrapper';
+import History from './pages/History';
+import Workers from './pages/Workers';
+import Settings from './pages/Settings';
 
 // =====================================================================
 // 1. HELPER UTILITIES
@@ -46,12 +48,13 @@ function App() {
   // --- UI & INTERACTION STATES ---
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(() => localStorage.getItem("sidebarCollapsed") === "true");
   const [scanDate, setScanDate] = useState(getTodayStr());
   const [selectedTask, setSelectedTask] = useState(null); // Logic for Floating Card
   const [filterStatus, setFilterStatus] = useState("All"); // Logic for Tabs
   const [selectedLocation, setSelectedLocation] = useState(null);
   const [searchQuery, setSearchQuery] = useState(''); // Holds typed search query
+  const [activePage, setActivePage] = useState("dashboard");
   
   // --- CUSTOM DATE PICKER STATES ---
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
@@ -425,7 +428,11 @@ function App() {
        
         <nav style={{ flex: 1 }}>
           <div 
-            onClick={() => setIsCollapsed(!isCollapsed)}
+            onClick={() => {
+              const nextCollapsed = !isCollapsed;
+              setIsCollapsed(nextCollapsed);
+              localStorage.setItem("sidebarCollapsed", String(nextCollapsed));
+            }}
             style={{
               cursor: 'pointer',
               padding: '12px',
@@ -442,13 +449,34 @@ function App() {
             <Menu size={24} color="white" />
             {!isCollapsed && <span style={{ marginLeft: '12px', fontWeight: '500' }}>Menu</span>}
           </div>
-          <SidebarItem icon={<LayoutDashboard size={20} />} text={!isCollapsed && "Dashboard"} fullText="Dashboard"/>
-          <SidebarItem icon={<MapPin size={22} />} text={!isCollapsed && "Trash Map"} fullText="Trash Map" active />
-          <Link to="/history" style={{ textDecoration: 'none' }}>
-            <SidebarItem icon={<HistoryIcon size={20} />} text={!isCollapsed && "History"} fullText="History"/>
-          </Link>
-          <SidebarItem icon={<Users size={20} />} text={!isCollapsed && "Workers"} fullText="Workers"/>
-          <SidebarItem icon={<Settings size={20} />} text={!isCollapsed && "Settings"} fullText="Settings"/>
+          <SidebarItem
+            icon={<LayoutDashboard size={20} />}
+            text={!isCollapsed && "Dashboard"}
+            fullText="Map View"
+            active={activePage === "dashboard"}
+            onClick={() => setActivePage("dashboard")}
+          />
+          <SidebarItem
+            icon={<HistoryIcon size={20} />}
+            text={!isCollapsed && "History"}
+            fullText="History"
+            active={activePage === "history"}
+            onClick={() => setActivePage("history")}
+          />
+          <SidebarItem
+            icon={<Users size={20} />}
+            text={!isCollapsed && "Workers"}
+            fullText="Workers"
+            active={activePage === "workers"}
+            onClick={() => setActivePage("workers")}
+          />
+          <SidebarItem
+            icon={<SettingsIcon size={20} />}
+            text={!isCollapsed && "Settings"}
+            fullText="Settings"
+            active={activePage === "settings"}
+            onClick={() => setActivePage("settings")}
+          />
         </nav>
 
         {/* Logout Button */}
@@ -810,28 +838,34 @@ function App() {
           </div>
         </div>
 
-        {/* ===== TASK FILTER TABS ===== */}
-        {/* Allows users to filter map pins based on task status (All, Pending, Completed) */}
-        <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
-          <TabButton text="All Tasks" active={filterStatus === "All"} onClick={() => setFilterStatus("All")} />
-          <TabButton text="Pending" active={filterStatus === "Pending"} onClick={() => setFilterStatus("Pending")} />
-          <TabButton text="Completed" active={filterStatus === "Done"} onClick={() => setFilterStatus("Done")} />
-        </div>
+        {activePage === "dashboard" && (
+          <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
+            <TabButton text="All Tasks" active={filterStatus === "All"} onClick={() => setFilterStatus("All")} />
+            <TabButton text="Pending" active={filterStatus === "Pending"} onClick={() => setFilterStatus("Pending")} />
+            <TabButton text="Completed" active={filterStatus === "Done"} onClick={() => setFilterStatus("Done")} />
+          </div>
+        )}
 
         {/* ===== MAP CONTAINER (The "Google Earth" View) ===== */}
         <div style={{ flex: 1, background: 'white', borderRadius: '20px', padding: '0px', boxShadow: '0 4px 20px rgba(0,0,0,0.05)', position: 'relative', overflow: 'hidden' }}>
           
-          <MapWrapper
-            filteredData={filteredData}
-            selectedLocation={selectedLocation}
-            setSelectedLocation={setSelectedLocation}
-            setSelectedTask={setSelectedTask}
-            isCollapsed={isCollapsed}
-          />
+          {activePage === "dashboard" && (
+            <MapWrapper
+              filteredData={filteredData}
+              selectedLocation={selectedLocation}
+              setSelectedLocation={setSelectedLocation}
+              setSelectedTask={setSelectedTask}
+              isCollapsed={isCollapsed}
+            />
+          )}
+
+          {activePage === "history" && <History />}
+          {activePage === "workers" && <Workers />}
+          {activePage === "settings" && <Settings />}
             
          {/* ===== FLOATING DETAILS CARD ===== */}
          {/* Renders conditionally when a specific task/pin is selected by the user */}
-          {selectedTask && (
+          {activePage === "dashboard" && selectedTask && (
             <div style={{
               position: 'absolute',
               top: '20px',
@@ -986,9 +1020,10 @@ function App() {
 // ==========================================
 
 // SidebarItem: Renders individual links/buttons in the navigation sidebar
-const SidebarItem = ({ icon, text, active, fullText }) => (
+const SidebarItem = ({ icon, text, active, fullText, onClick }) => (
   <div 
     title={!text ? fullText : ""} // <-- Adds hover tooltip when sidebar is collapsed
+    onClick={onClick}
     style={{ 
       display: 'flex', 
       alignItems: 'center', 
